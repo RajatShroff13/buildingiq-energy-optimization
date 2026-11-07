@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block eyebrow %}<p class="eyebrow">Control output</p>{% endblock %}
+
+{% block content %}
+<section class="stack">
+
+  <div class="card">
+    <div class="spread" style="flex-wrap:wrap">
+      <div class="tabs" role="tablist" aria-label="Choose a solution">
+        {% for s in solutions %}
+        <button class="tab {% if loop.first %}is-active{% endif %}" role="tab"
+                data-solution="{{ s.key }}" aria-selected="{{ 'true' if loop.first else 'false' }}">
+          {{ s.name }}
+        </button>
+        {% endfor %}
+      </div>
+      <div class="row" id="solution-figures" style="gap:18px"></div>
+    </div>
+
+    <div class="grid grid-2 mt-3" style="gap:22px">
+      <div>
+        <h3 class="card-title">HVAC setpoint</h3>
+        <p class="card-note">Target indoor temperature per hour. Band marks 23–25 °C, where PPD stays near 5%.</p>
+        <div class="chart-box short"><canvas id="chart-setpoint" aria-label="HVAC setpoint by hour"></canvas></div>
+      </div>
+      <div>
+        <h3 class="card-title">Lighting dimming level</h3>
+        <p class="card-note">0 = off, 1 = full output.</p>
+        <div class="chart-box short"><canvas id="chart-lighting" aria-label="Lighting level by hour"></canvas></div>
+      </div>
+      <div>
+        <h3 class="card-title">Battery action</h3>
+        <p class="card-note">Positive charges the 20 kWh pack, negative discharges it.</p>
+        <div class="chart-box short"><canvas id="chart-battery" aria-label="Battery action by hour"></canvas></div>
+      </div>
+      <div>
+        <h3 class="card-title">Time-of-use tariff</h3>
+        <p class="card-note">Summer weekday ComEd-style tariff the plan is optimised against.</p>
+        <div class="chart-box short"><canvas id="chart-price" aria-label="TOU price by hour"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card card-flush">
+    <div class="spread" style="padding:18px 22px">
+      <div>
+        <h2 class="card-title">Hour-by-hour setpoints</h2>
+        <p class="card-note">Exactly what a BMS would receive for this solution.</p>
+      </div>
+      <a class="btn btn-sm" href="{{ url_for('optimization_page') }}">Compare solutions →</a>
+    </div>
+    <div class="table-wrap scroll-y" id="schedule-table"></div>
+  </div>
+
+  <div class="note warn">
+    <strong>Reality check.</strong> These schedules come from a simplified plant model: thermal mass,
+    humidity and equipment ramp rates are not simulated. The 24-hour plan is a starting point for a real
+    controller, not a drop-in supervisory command.
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const SCHEDULES = {{ schedule|tojson }};
+  const FIGURES = {{ solutions|tojson }};
+  const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0") + ":00");
+  let charts = {};
+
+  function render(key) {
+    const s = SCHEDULES[key];
+    const fig = FIGURES.find((f) => f.key === key);
+    const labels = HOURS.slice(0, s.hours.length);
+
+    document.getElementById("solution-figures").innerHTML = fig
+      ? `<span class="chip">$${fig.cost.toFixed(2)}/day</span>
+         <span class="chip">${fig.energy.toFixed(1)} kWh</span>
+         <span class="chip">PPD ${Number(fig.PPD_pct).toFixed(1)}%</span>`
+      : "";
+
+    charts.setpoint = BI.line(document.getElementById("chart-setpoint"), {
+      labels,
+      series: [
+        { label: "Setpoint", data: s.setpoint, color: BI.colors.accent, stepped: true },
+        { label: "23 °C", data: labels.map(() => 23), color: BI.colors.good, dashed: true, width: 1 },
+        { label: "25 °C", data: labels.map(() => 25), color: BI.colors.good, dashed: true, width: 1 },
+      ],
+      yTitle: "°C", yMin: 19, yMax: 27,
+    });
+
+    charts.lighting = BI.line(document.getElementById("chart-lighting"), {
+      labels,
+      series: [{ label: "Lighting", data: s.lighting, color: BI.colors.cyan, stepped: true }],
+      yTitle: "level", yMin: 0, yMax: 1.1, fillFirst: true,
+    });
+
+    const battery = BI.line(document.getElementById("chart-battery"), {
+      labels,
+      series: [{ label: "Battery", data: s.battery, color: BI.colors.violet, stepped: true }],
+      yTitle: "action", yMin: -1.1, yMax: 1.1,
+    });
+    charts.battery = battery;
+
+    charts.price = BI.line(document.getElementById("chart-price"), {
+      labels,
+      series: [{ label: "Tariff", data: s.price, color: BI.colors.warn, stepped: true }],
+      yTitle: "USD/kWh", fillFirst: true,
+    });
+
+    const rows = s.hours.map((h, i) => `
+      <tr>
+        <td class="mono">${String(h).padStart(2, "0")}:00</td>
+        <td class="num">${s.setpoint[i].toFixed(2)} °C</td>
+        <td class="num">${s.lighting[i].toFixed(2)}</td>
+        <td class="num">${s.battery[i].toFixed(2)}</td>
+        <td>${s.mode[i]}</td>
+        <td class="num">$${s.price[i].toFixed(3)}</td>
+      </tr>`).join("");
+
+    document.getElementById("schedule-table").innerHTML = `
+      <table class="data">
+        <thead><tr><th>Hour</th><th class="num">Setpoint</th><th class="num">Lighting</th><th class="num">Battery</th><th>Mode</th><th class="num">Tariff</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach((t) => {
+        t.classList.remove("is-active");
+        t.setAttribute("aria-selected", "false");
+      });
+      tab.classList.add("is-active");
+      tab.setAttribute("aria-selected", "true");
+      render(tab.dataset.solution);
+    });
+  });
+
+  // Deep link: /schedules#A_cheapest opens straight onto that plan
+  const fromHash = location.hash.slice(1);
+  const initial = SCHEDULES[fromHash] ? fromHash : Object.keys(SCHEDULES)[0];
+  const activeTab = document.querySelector(`.tab[data-solution="${initial}"]`);
+  if (activeTab) activeTab.click();
+  else render(initial);
+</script>
+{% endblock %}

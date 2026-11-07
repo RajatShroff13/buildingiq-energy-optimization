@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block eyebrow %}<p class="eyebrow">Optimization layer</p>{% endblock %}
+
+{% block content %}
+<section class="stack">
+
+  <div class="grid grid-2-1">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2 class="card-title">Cost vs. energy — every point is a full day</h2>
+          <p class="card-note">Click a point to inspect it. Lower-left is cheaper and leaner; colour encodes thermal discomfort.</p>
+        </div>
+        <span class="chip">{{ pareto.n }} solutions</span>
+      </div>
+      <div class="chart-box tall"><canvas id="chart-pareto" aria-label="Pareto front"></canvas></div>
+      <div class="legend">
+        <span><i class="swatch" style="background:#34d399"></i>PPD ≤ 5.4%</span>
+        <span><i class="swatch" style="background:#fbbf24"></i>PPD 5.4–5.7%</span>
+        <span><i class="swatch" style="background:#a78bfa"></i>PPD &gt; 5.7%</span>
+      </div>
+      <p class="card-note mt-1 mb-0" id="pick">Select a point on the chart to see its exact figures.</p>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">Search settings</h2>
+      <p class="card-note">NSGA-II with elitist non-dominated sorting and crowding distance.</p>
+      <div class="table-wrap mt-1">
+        <table class="data">
+          <tbody>
+            <tr><td>Population</td><td class="num" style="text-align:left">{{ settings.population_size }}</td></tr>
+            <tr><td>Generations</td><td class="num" style="text-align:left">{{ settings.generations }}</td></tr>
+            <tr><td>Genes per individual</td><td class="num" style="text-align:left">72</td></tr>
+            <tr><td>Crossover</td><td class="num" style="text-align:left">single-point · 0.85</td></tr>
+            <tr><td>Mutation</td><td class="num" style="text-align:left">gaussian · 0.12</td></tr>
+            <tr><td>Battery</td><td class="num" style="text-align:left">20 kWh · 5 kW</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="card-note mt-2 mb-0">Objectives are all minimised: cost (USD), energy (kWh) and mean
+        PPD (%). A solution survives only if nothing else beats it on all three.</p>
+    </div>
+  </div>
+
+  <div class="compare">
+    {% for s in solutions %}
+    <div class="solution {% if s.key == 'B_balanced' %}is-best{% endif %}">
+      <div>
+        <div class="solution-name">{{ s.name }}</div>
+        <p class="solution-blurb">{{ s.blurb }}</p>
+      </div>
+      <div class="solution-figures">
+        <div><span class="v" style="color:var(--accent)">${{ '%.2f'|format(s.cost) }}</span><span class="k">cost / day</span></div>
+        <div><span class="v">{{ '%.1f'|format(s.energy) }}</span><span class="k">kWh</span></div>
+        <div><span class="v" style="color:var(--warn)">{{ '%.1f'|format(s.PPD_pct) }}%</span><span class="k">PPD</span></div>
+      </div>
+      <a class="btn btn-sm" href="{{ url_for('schedules_page') }}#{{ s.key }}">Hourly plan →</a>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h2 class="card-title">Solution comparison</h2>
+      <p class="card-note">Relative to the cheapest plan.</p>
+      <div class="table-wrap mt-1">
+        <table class="data">
+          <thead>
+            <tr><th>Plan</th><th class="num">Cost</th><th class="num">Energy</th><th class="num">PPD</th><th class="num">Δ cost</th><th class="num">Δ energy</th></tr>
+          </thead>
+          <tbody>
+            {% set base_cost = solutions[0].cost %}
+            {% set base_energy = solutions[0].energy %}
+            {% for s in solutions %}
+            <tr>
+              <td class="em">{{ s.name }}</td>
+              <td class="num">${{ '%.3f'|format(s.cost) }}</td>
+              <td class="num">{{ '%.2f'|format(s.energy) }}</td>
+              <td class="num">{{ '%.1f'|format(s.PPD_pct) }}%</td>
+              <td class="num">{% if loop.first %}<span class="badge neutral">baseline</span>{% else %}+{{ '%.0f'|format((s.cost / base_cost - 1) * 100) }}%{% endif %}</td>
+              <td class="num">{% if loop.first %}<span class="badge neutral">baseline</span>{% else %}+{{ '%.0f'|format((s.energy / base_energy - 1) * 100) }}%{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">What the optimizer learned</h2>
+      <ul class="list-clean mt-1">
+        <li><span class="tick">→</span><span><strong>Charge into the solar surplus.</strong> Battery action is positive through the early afternoon, when PV covers the load and the TOU price is still low.</span></li>
+        <li><span class="tick">→</span><span><strong>Discharge into the peaks.</strong> 07:00–09:00 and 18:00–21:00 are where stored energy is worth most.</span></li>
+        <li><span class="tick">→</span><span><strong>Pre-cool instead of paying.</strong> Setpoints drop before the expensive window so the building coasts through it.</span></li>
+        <li><span class="tick">→</span><span><strong>Lighting is nearly free.</strong> Dimming saves little in this building — hence the wide 0–1 spread between solutions.</span></li>
+      </ul>
+      <div class="note mt-2">The comfort constraint is what stops the optimizer from simply switching
+        everything off: PPD must stay low, so the cheapest plan still holds a usable setpoint.</div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const p = {{ pareto|tojson }};
+  BI.pareto(document.getElementById("chart-pareto"), {
+    cost: p.cost,
+    energy: p.energy,
+    ppd: p.ppd,
+    onPick(pt) {
+      document.getElementById("pick").textContent =
+        `Selected: $${pt.x.toFixed(3)}/day · ${pt.y.toFixed(2)} kWh · PPD ${pt.ppd.toFixed(1)}%`;
+    },
+  });
+</script>
+{% endblock %}

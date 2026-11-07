@@ -1,0 +1,53 @@
+{
+  "prediction_model": {
+    "type": "XGBoost Regressor",
+    "n_estimators": 800,
+    "max_depth": 7,
+    "n_features": 39,
+    "top_features": [
+      "pv_generation_kW",
+      "solar_radiation_Wm2",
+      "solar_lag_1h",
+      "heating_kW",
+      "solar_rolling_3h_mean"
+    ],
+    "validation": {
+      "rmse": 0.1084,
+      "mae": 0.0615,
+      "r2": 0.9834,
+      "mape_pct": "~9%"
+    },
+    "test": {
+      "rmse": 0.0557,
+      "mae": 0.0299,
+      "r2": 0.9892,
+      "mape_pct": "~7%"
+    }
+  },
+  "moga": {
+    "population_size": 120,
+    "generations": 80,
+    "pareto_solutions": 27,
+    "solution_A_cheapest": {
+      "cost": 1.599,
+      "energy": 25.795,
+      "PPD_pct": 5.9
+    },
+    "solution_B_balanced": {
+      "cost": 1.653,
+      "energy": 26.656,
+      "PPD_pct": 5.4
+    },
+    "solution_C_comfortable": {
+      "cost": 1.986,
+      "energy": 32.033,
+      "PPD_pct": 5.0
+    }
+  },
+  "data": {
+    "train_rows": 6031,
+    "val_rows": 1292,
+    "test_rows": 1293,
+    "date_range": "2023-06-08 \u2192 2024-06-01"
+  }
+}

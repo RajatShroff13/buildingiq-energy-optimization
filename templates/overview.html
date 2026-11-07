@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block eyebrow %}<p class="eyebrow">Smart building · energy optimization</p>{% endblock %}
+
+{% block content %}
+<section class="stack">
+
+  <!-- headline numbers -->
+  <div class="grid grid-4">
+    {% for k in kpis %}
+    <div class="card kpi {{ k.tone }}">
+      <span class="kpi-label">{{ k.label }}</span>
+      <span class="kpi-value">{{ k.value }}</span>
+      <span class="kpi-hint">{{ k.hint }}</span>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="grid grid-2-1">
+    <!-- forecast preview -->
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2 class="card-title">Forecast vs. measured load</h2>
+          <p class="card-note">Last 72 hours of the held-out test week, XGBoost predictions against real meter readings.</p>
+        </div>
+        <a class="btn btn-sm" href="{{ url_for('forecast_page') }}">Open forecast →</a>
+      </div>
+      <div class="chart-box"><canvas id="chart-forecast" aria-label="Forecast versus actual load"></canvas></div>
+      <div class="legend">
+        <span><i class="swatch" style="background:#2dd4bf"></i>Predicted</span>
+        <span><i class="swatch" style="background:#a78bfa"></i>Measured</span>
+        <span class="mono">test R² {{ '%.4f'|format(model.test.r2) }} · RMSE {{ '%.3f'|format(model.test.rmse) }} kW</span>
+      </div>
+    </div>
+
+    <!-- model / data facts -->
+    <div class="card">
+      <h2 class="card-title">What drives the load</h2>
+      <p class="card-note">Gain-based feature importance of the committed model.</p>
+      <ul class="list-clean mt-2" style="gap:12px">
+        {% for f in top_features %}
+        <li>
+          <span class="mono" style="min-width:38px;color:#2dd4bf">{{ '%.0f'|format(f.importance * 100) }}%</span>
+          <span class="mono" style="font-size:12.5px">{{ f.feature }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      <p class="card-note mt-2 mb-0">Solar generation alone explains more than half of the variance — this
+        building's net load tracks its PV output far more than occupancy.</p>
+    </div>
+  </div>
+
+  <div class="grid grid-2-1">
+    <!-- pareto preview -->
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2 class="card-title">The Pareto front</h2>
+          <p class="card-note">{{ moga.pareto_solutions }} non-dominated day plans from a {{ moga.population_size }}×{{ moga.generations }} NSGA-II run.</p>
+        </div>
+        <a class="btn btn-sm" href="{{ url_for('optimization_page') }}">Open optimizer →</a>
+      </div>
+      <div class="chart-box"><canvas id="chart-pareto" aria-label="Pareto front of cost versus energy"></canvas></div>
+      <div class="legend">
+        <span><i class="swatch" style="background:#34d399"></i>PPD ≤ 5.4%</span>
+        <span><i class="swatch" style="background:#fbbf24"></i>PPD 5.4–5.7%</span>
+        <span><i class="swatch" style="background:#a78bfa"></i>PPD &gt; 5.7%</span>
+      </div>
+    </div>
+
+    <!-- three picks -->
+    <div class="card">
+      <h2 class="card-title">Three plans worth considering</h2>
+      <p class="card-note">Same building, same day — different trade-offs.</p>
+      <div class="stack mt-2" style="gap:12px">
+        {% for s in solutions %}
+        <div style="border:1px solid var(--border-soft);border-radius:10px;padding:12px 14px">
+          <div class="spread">
+            <span class="solution-name" style="font-size:13.5px">{{ s.name }}</span>
+            <span class="badge {{ s.tone }}">${{ '%.2f'|format(s.cost) }}</span>
+          </div>
+          <div class="card-note mono" style="font-size:11.5px;margin-top:4px">
+            {{ '%.1f'|format(s.energy) }} kWh · PPD {{ '%.1f'|format(s.ppd) }}%
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <a class="btn btn-primary mt-2" style="width:100%;justify-content:center" href="{{ url_for('schedules_page') }}">See the hourly schedules</a>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>How to read this project.</strong> A gradient-boosted model predicts hourly load from weather,
+    solar and lagged signals. Those forecasts feed a genetic algorithm that searches 72 control genes
+    (setpoint, lighting, battery per hour) and keeps only non-dominated solutions — so an operator can pick
+    a point on the trade-off curve instead of accepting a single weighted score.
+  </div>
+
+  <div class="grid grid-3">
+    <div class="card card-tight">
+      <h3 class="card-title">Data</h3>
+      <p class="card-note">{{ data.train_rows + data.val_rows + data.test_rows }} modelling hours from HouseZero, joined with ASHRAE comfort, CU-BEMS and NOAA weather data.</p>
+      <a class="btn btn-sm mt-1" href="{{ url_for('pipeline_page') }}">Datasets →</a>
+    </div>
+    <div class="card card-tight">
+      <h3 class="card-title">Model</h3>
+      <p class="card-note">{{ model.type }}, {{ model.n_estimators }} trees, depth {{ model.max_depth }}, {{ model.n_features }} features.</p>
+      <a class="btn btn-sm mt-1" href="{{ url_for('forecast_page') }}">Metrics →</a>
+    </div>
+    <div class="card card-tight">
+      <h3 class="card-title">Try it</h3>
+      <p class="card-note">Upload your own sensor CSV and the optimizer re-runs in the browser.</p>
+      <a class="btn btn-sm mt-1" href="{{ url_for('run_page') }}">Run analysis →</a>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const f = {{ forecast_chart|tojson }};
+  BI.line(document.getElementById("chart-forecast"), {
+    labels: f.labels,
+    series: [
+      { label: "Predicted", data: f.predicted, color: BI.colors.accent },
+      { label: "Measured", data: f.actual, color: BI.colors.violet, dashed: true },
+    ],
+    yTitle: "kW",
+    fillFirst: true,
+  });
+
+  const p = {{ pareto_chart|tojson }};
+  BI.pareto(document.getElementById("chart-pareto"), p);
+</script>
+{% endblock %}

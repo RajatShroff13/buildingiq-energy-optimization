@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block eyebrow %}<p class="eyebrow">404</p>{% endblock %}
+
+{% block content %}
+<section class="card" style="text-align:center;padding:56px 28px">
+  <div class="mono" style="font-size:52px;color:var(--accent);line-height:1">404</div>
+  <h2 class="card-title mt-2" style="font-size:19px">That page is not part of the dashboard</h2>
+  <p class="card-note" style="max-width:46ch;margin:8px auto 0">The link may be stale. Start from the
+    overview, or jump straight to the optimizer output.</p>
+  <div class="row mt-3" style="justify-content:center">
+    <a class="btn btn-primary" href="{{ url_for('overview') }}">Back to overview</a>
+    <a class="btn" href="{{ url_for('optimization_page') }}">Pareto results</a>
+    <a class="btn" href="{{ url_for('run_page') }}">Re-run analysis</a>
+  </div>
+</section>
+{% endblock %}

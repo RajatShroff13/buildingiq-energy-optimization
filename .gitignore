@@ -1,0 +1,28 @@
+# Raw dataset archives (~435 MB) — download links live in the README
+raw/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Local run artefacts
+outputs/last_run.json
+*.log
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block eyebrow %}<p class="eyebrow">Reproducibility</p>{% endblock %}
+
+{% block content %}
+<section class="stack">
+
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2 class="card-title">The pipeline, end to end</h2>
+        <p class="card-note">Raw sensors in, control schedule out — five stages, no manual steps.</p>
+      </div>
+      <span class="chip">Python · pandas · XGBoost · NumPy</span>
+    </div>
+
+    <div class="steps mt-2">
+      <div class="step">
+        <span class="step-num">1</span>
+        <div>
+          <div class="step-title">Collect &amp; clean</div>
+          <p class="step-body">HouseZero hourly sensors are merged with outdoor weather, ASHRAE comfort data and CU-BEMS loads; duplicates dropped, gaps forward-filled, units normalised.</p>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-num">2</span>
+        <div>
+          <div class="step-title">Engineer features</div>
+          <p class="step-body">Lags (1 h → 168 h), rolling means and standard deviations, cyclical hour/month/day-of-week encoding, an occupancy proxy from CO₂, PMV/PPD from the Fanger equation, and the TOU tariff for the timestamp.</p>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-num">3</span>
+        <div>
+          <div class="step-title">Train the forecaster</div>
+          <p class="step-body">{{ metrics.type }} on a chronological 70 / 15 / 15 split, MinMax scaling fitted on train only, early stopping against the validation fold.</p>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-num">4</span>
+        <div>
+          <div class="step-title">Optimize the day</div>
+          <p class="step-body">NSGA-II evolves 72 genes (setpoint, lighting, battery × 24 h) against three objectives — cost, energy, mean PPD — keeping a non-dominated front instead of a single weighted answer.</p>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-num">5</span>
+        <div>
+          <div class="step-title">Serve the result</div>
+          <p class="step-body">This site renders the stored artefacts and can re-run the whole optimizer on an uploaded CSV through <code>POST /api/run</code>.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card card-flush">
+    <div class="spread" style="padding:18px 22px">
+      <div>
+        <h2 class="card-title">Datasets</h2>
+        <p class="card-note">All open access. Only the cleaned, hourly-resolution versions are committed.</p>
+      </div>
+      <span class="chip">{{ datasets|length }} sources</span>
+    </div>
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Dataset</th><th>Provides</th><th class="num">Rows</th><th class="num">Cols</th><th>Source</th></tr></thead>
+        <tbody>
+          {% for d in datasets %}
+          <tr>
+            <td class="em">{{ d.name }}</td>
+            <td style="color:var(--muted)">{{ d.purpose }}</td>
+            <td class="num">{{ '{:,}'.format(d.rows) if d.present else 'not included' }}</td>
+            <td class="num">{{ d.columns if d.present else '–' }}</td>
+            <td class="mono" style="font-size:12px">{{ d.source }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h2 class="card-title">Feature groups</h2>
+      <p class="card-note">{{ metrics.n_features }} model inputs, in four families.</p>
+      <div class="stack mt-2" style="gap:14px">
+        <div>
+          <div class="kpi-label">Lags &amp; rolling windows</div>
+          <div class="tag-cloud mt-1">
+            <span class="tag">load_lag_1h…168h</span><span class="tag">load_rolling_24h_mean</span>
+            <span class="tag">load_rolling_7d_mean</span><span class="tag">solar_lag_1h</span>
+            <span class="tag">temp_lag_24h</span>
+          </div>
+        </div>
+        <div>
+          <div class="kpi-label">Cyclical time</div>
+          <div class="tag-cloud mt-1">
+            <span class="tag">hour_sin/cos</span><span class="tag">month_sin/cos</span>
+            <span class="tag">dow_sin/cos</span><span class="tag">is_weekend</span>
+          </div>
+        </div>
+        <div>
+          <div class="kpi-label">Environment</div>
+          <div class="tag-cloud mt-1">
+            <span class="tag">outdoor_temp_C</span><span class="tag">outdoor_RH_pct</span>
+            <span class="tag">solar_radiation_Wm2</span><span class="tag">wind_speed_ms</span>
+            <span class="tag">pressure_mbar</span>
+          </div>
+        </div>
+        <div>
+          <div class="kpi-label">Occupant &amp; tariff</div>
+          <div class="tag-cloud mt-1">
+            <span class="tag">PMV</span><span class="tag">PPD</span><span class="tag">comfort_ok</span>
+            <span class="tag">occupancy</span><span class="tag">tou_price_per_kwh</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">Ranked importances</h2>
+      <p class="card-note">Top ten of the committed model.</p>
+      <div class="table-wrap mt-1">
+        <table class="data">
+          <thead><tr><th>#</th><th>Feature</th><th class="num">Gain share</th></tr></thead>
+          <tbody>
+            {% for f in top_features %}
+            <tr>
+              <td class="mono" style="color:var(--dim)">{{ '%02d'|format(loop.index) }}</td>
+              <td class="mono" style="font-size:12.5px">{{ f.feature }}</td>
+              <td class="num">{{ '%.1f'|format(f.importance * 100) }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h2 class="card-title">Known limitations</h2>
+      <ul class="list-clean mt-1">
+        <li><span class="tick">!</span><span>One building only — HouseZero. Multi-building validation is still open.</span></li>
+        <li><span class="tick">!</span><span>Tariff is a static TOU schedule; real-time pricing would change the battery policy hour by hour.</span></li>
+        <li><span class="tick">!</span><span>Plant model is simplified: no thermal mass, humidity or ramp-rate dynamics.</span></li>
+        <li><span class="tick">!</span><span>PMV assumes fixed metabolic rate (1.2 met) and clothing (0.5 clo).</span></li>
+        <li><span class="tick">!</span><span>No demand-charge or grid-signal (demand response) objective yet.</span></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">Reproduce it</h2>
+      <p class="card-note">The committed model and artefacts can be rebuilt from the scripts at the repository root.</p>
+      <div class="table-wrap mt-1">
+        <table class="data">
+          <tbody>
+            <tr><td class="mono">train_model.py</td><td style="color:var(--muted)">retrain XGBoost → <code>models/model.pkl</code></td></tr>
+            <tr><td class="mono">run_optimization.py</td><td style="color:var(--muted)">forecast + NSGA-II → <code>outputs/</code></td></tr>
+            <tr><td class="mono">app.py</td><td style="color:var(--muted)">this dashboard</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <pre class="mt-2" style="background:var(--bg-soft);border:1px solid var(--border);border-radius:9px;padding:12px 14px;overflow:auto;font-family:var(--mono);font-size:12px;color:#b7c7dc;margin-bottom:0">pip install -r requirements.txt
+python train_model.py
+python run_optimization.py --input data/sample/sample_sensor_data.csv
+python app.py</pre>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block eyebrow %}<p class="eyebrow">Prediction layer</p>{% endblock %}
+
+{% block content %}
+<section class="stack">
+
+  <div class="metric-row">
+    <div class="metric-cell">
+      <div class="k">Test R²</div>
+      <div class="v" style="color:var(--accent)">{{ '%.4f'|format(metrics.test.r2) }}</div>
+    </div>
+    <div class="metric-cell">
+      <div class="k">Test RMSE</div>
+      <div class="v">{{ '%.3f'|format(metrics.test.rmse) }} <span class="card-note" style="font-size:11px">kW</span></div>
+    </div>
+    <div class="metric-cell">
+      <div class="k">Test MAE</div>
+      <div class="v">{{ '%.3f'|format(metrics.test.mae) }} <span class="card-note" style="font-size:11px">kW</span></div>
+    </div>
+    <div class="metric-cell">
+      <div class="k">Validation R²</div>
+      <div class="v" style="color:var(--good)">{{ '%.4f'|format(metrics.validation.r2) }}</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2 class="card-title">One week of held-out predictions</h2>
+        <p class="card-note">The model never saw these {{ forecast_chart.hours }} hours during training. Shaded band is the predicted series.</p>
+      </div>
+      <span class="chip" title="{{ metrics.mape_note }}">MAPE ≈ {{ metrics.test.mape_percent }}%</span>
+    </div>
+    <div class="chart-box tall"><canvas id="chart-week" aria-label="Actual versus predicted load over the test week"></canvas></div>
+    <div class="legend">
+      <span><i class="swatch" style="background:#2dd4bf"></i>Predicted</span>
+      <span><i class="swatch" style="background:#a78bfa"></i>Measured</span>
+    </div>
+  </div>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h2 class="card-title">Residual distribution</h2>
+      <p class="card-note">Prediction error (kW). A tight cluster around zero means no systematic bias.</p>
+      <div class="chart-box short mt-1"><canvas id="chart-hist" aria-label="Histogram of prediction residuals"></canvas></div>
+      <div class="row mt-1" style="gap:20px">
+        <span class="card-note">Mean <span class="mono" id="err-mean">–</span> kW</span>
+        <span class="card-note">Median <span class="mono" id="err-med">–</span> kW</span>
+        <span class="card-note">Max |error| <span class="mono" id="err-max">–</span> kW</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">What the model relies on</h2>
+      <p class="card-note">Top 12 of {{ metrics.n_features }} features by split gain.</p>
+      <div class="chart-box mt-1" style="height:300px"><canvas id="chart-imp" aria-label="Feature importance"></canvas></div>
+    </div>
+  </div>
+
+  <div class="grid grid-1-2">
+    <div class="card">
+      <h2 class="card-title">Split scores</h2>
+      <div class="table-wrap mt-1">
+        <table class="data">
+          <thead><tr><th>Split</th><th class="num">RMSE</th><th class="num">MAE</th><th class="num">R²</th></tr></thead>
+          <tbody>
+            <tr><td>Validation</td><td class="num">{{ '%.4f'|format(metrics.validation.rmse) }}</td><td class="num">{{ '%.4f'|format(metrics.validation.mae) }}</td><td class="num">{{ '%.4f'|format(metrics.validation.r2) }}</td></tr>
+            <tr><td>Test</td><td class="num">{{ '%.4f'|format(metrics.test.rmse) }}</td><td class="num">{{ '%.4f'|format(metrics.test.mae) }}</td><td class="num em">{{ '%.4f'|format(metrics.test.r2) }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="card-note mt-2 mb-0">Target: net building load in kW, MinMax-scaled and inverted with
+        <code>scaler_params.csv</code>. Splits are chronological, never shuffled.</p>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">Model card</h2>
+      <div class="table-wrap mt-1">
+        <table class="data">
+          <tbody>
+            <tr><td>Algorithm</td><td class="em">{{ metrics.type }}</td></tr>
+            <tr><td>Trees / depth</td><td class="num" style="text-align:left">{{ metrics.n_estimators }} / {{ metrics.max_depth }}</td></tr>
+            <tr><td>Features</td><td class="num" style="text-align:left">{{ metrics.n_features }}</td></tr>
+            <tr><td>Target</td><td class="mono">total_load_kW (net)</td></tr>
+            <tr><td>Top signal</td><td class="mono">{{ metrics.top_features[0] }}</td></tr>
+            <tr><td>Training window</td><td class="mono">{{ data.date_range }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="card-note mt-2 mb-0">Gradient boosting on pre-computed lag features was preferred over an LSTM:
+        no GPU, seconds to train, and directly interpretable importances.</p>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const f = {{ forecast_chart|tojson }};
+  const imp = {{ importance|tojson }};
+
+  BI.line(document.getElementById("chart-week"), {
+    labels: f.labels,
+    series: [
+      { label: "Predicted", data: f.predicted, color: BI.colors.accent },
+      { label: "Measured", data: f.actual, color: BI.colors.violet, dashed: true },
+    ],
+    yTitle: "Net load (kW)",
+    fillFirst: true,
+  });
+
+  BI.histogram(document.getElementById("chart-hist"), f.hist);
+
+  BI.bar(document.getElementById("chart-imp"), {
+    labels: imp.labels,
+    data: imp.values,
+    horizontal: true,
+    color: BI.colors.cyan,
+    valueSuffix: "%",
+  });
+
+  const err = f.error;
+  const sorted = [...err].sort((a, b) => a - b);
+  const mean = err.reduce((a, b) => a + b, 0) / err.length;
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const maxAbs = Math.max(...err.map(Math.abs));
+  document.getElementById("err-mean").textContent = mean.toFixed(3);
+  document.getElementById("err-med").textContent = median.toFixed(3);
+  document.getElementById("err-max").textContent = maxAbs.toFixed(3);
+</script>
+{% endblock %}

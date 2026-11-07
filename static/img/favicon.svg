@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="BuildingIQ">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2dd4bf"/>
+      <stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#0a1018"/>
+  <rect x="8" y="8" width="48" height="48" rx="12" fill="url(#g)"/>
+  <path d="M22 44V26h7v18M35 44V20h7v24" fill="none" stroke="#06201c" stroke-width="4" stroke-linecap="round"/>
+  <path d="M16 48h32" stroke="#06201c" stroke-width="4" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block eyebrow %}<p class="eyebrow">Interactive</p>{% endblock %}
+
+{% block content %}
+<section class="stack">
+
+  <div class="grid grid-2-1">
+    <div class="card">
+      <h2 class="card-title">1 · Upload sensor data</h2>
+      <p class="card-note">A CSV with a <code>timestamp</code> column plus raw sensor columns
+        (<code>total_load_kW</code>, <code>outdoor_temp_C</code>, <code>avg_indoor_temp_C</code>,
+        <code>pv_generation_kW</code>, <code>solar_radiation_Wm2</code> …). Missing features are filled
+        with neutral defaults, so partial files still run.</p>
+
+      <label class="dropzone mt-2" id="dropzone" for="file-input">
+        <input id="file-input" type="file" accept=".csv,text/csv" hidden>
+        <div class="dropzone-title" id="dz-title">Drop a CSV here, or click to browse</div>
+        <div class="dropzone-hint" id="dz-hint">Maximum 8 MB · the committed sample is {{ sample_rows }} hours</div>
+      </label>
+
+      <div class="row mt-2">
+        <button class="btn btn-primary" id="run-btn" disabled>
+          <span id="run-spinner" class="spinner is-hidden"></span>
+          <span id="run-label">Run optimizer</span>
+        </button>
+        <a class="btn" href="{{ url_for('api_sample') }}">Download sample CSV</a>
+        <span class="card-note" style="margin:0">Typical run: 5–15 s (forecast + NSGA-II).</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">What happens on submit</h2>
+      <div class="steps mt-2">
+        <div class="step">
+          <span class="step-num">1</span>
+          <div><div class="step-title">Features are rebuilt</div>
+            <p class="step-body">Lags, rolling stats, cyclical terms, PMV/PPD and tariff from timestamps.</p></div>
+        </div>
+        <div class="step">
+          <span class="step-num">2</span>
+          <div><div class="step-title">Load is forecast</div>
+            <p class="step-body">The trained model predicts net load for the uploaded hours.</p></div>
+        </div>
+        <div class="step">
+          <span class="step-num">3</span>
+          <div><div class="step-title">Schedule is optimized</div>
+            <p class="step-body">NSGA-II returns a fresh Pareto front and three representative plans.</p></div>
+        </div>
+      </div>
+      <div class="note mt-1">Uploads are handled in a temporary file and deleted immediately after the
+        request, so nothing is stored on the server.</div>
+    </div>
+  </div>
+
+  <!-- results -->
+  <div id="results" class="is-hidden stack">
+    <div class="metric-row" id="result-metrics"></div>
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2 class="card-title">Forecast on your data</h2>
+          <p class="card-note" id="result-note"></p>
+        </div>
+        <span class="chip" id="result-rows"></span>
+      </div>
+      <div class="chart-box"><canvas id="chart-run-forecast" aria-label="Forecast on uploaded data"></canvas></div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <h2 class="card-title">New Pareto front</h2>
+        <p class="card-note" id="pareto-note">Cost against energy for the uploaded window.</p>
+        <div class="chart-box"><canvas id="chart-run-pareto" aria-label="Pareto front for uploaded data"></canvas></div>
+      </div>
+      <div class="card">
+        <h2 class="card-title">Best plan — net load</h2>
+        <p class="card-note">Hourly grid draw for the balanced solution, with solar availability.</p>
+        <div class="chart-box"><canvas id="chart-run-load" aria-label="Net load of the balanced plan"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card card-flush">
+      <div class="spread" style="padding:18px 22px">
+        <div>
+          <h2 class="card-title">Suggested setpoints</h2>
+          <p class="card-note" id="run-table-note">Balanced solution.</p>
+        </div>
+      </div>
+      <div class="table-wrap" id="run-table"></div>
+    </div>
+  </div>
+
+  <div id="error-box" class="note warn is-hidden"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const input = document.getElementById("file-input");
+  const dropzone = document.getElementById("dropzone");
+  const runBtn = document.getElementById("run-btn");
+  const resultsEl = document.getElementById("results");
+  const errorBox = document.getElementById("error-box");
+  let picked = null;
+
+  function setFile(file) {
+    picked = file;
+    const ok = !!file;
+    dropzone.classList.toggle("has-file", ok);
+    document.getElementById("dz-title").textContent = ok ? file.name : "Drop a CSV here, or click to browse";
+    document.getElementById("dz-hint").textContent = ok
+      ? (file.size / 1024).toFixed(1) + " KB · ready to run"
+      : "Maximum 8 MB";
+    runBtn.disabled = !ok;
+  }
+
+  input.addEventListener("change", () => setFile(input.files[0]));
+
+  ["dragenter", "dragover"].forEach((ev) =>
+    dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.add("dragover"); })
+  );
+  ["dragleave", "drop"].forEach((ev) =>
+    dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.remove("dragover"); })
+  );
+  dropzone.addEventListener("drop", (e) => {
+    if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+  });
+
+  function fmt(n, d = 2) { return Number(n).toFixed(d); }
+
+  runBtn.addEventListener("click", async () => {
+    if (!picked) return;
+    errorBox.classList.add("is-hidden");
+    runBtn.disabled = true;
+    document.getElementById("run-spinner").classList.remove("is-hidden");
+    document.getElementById("run-label").textContent = "Optimizing…";
+
+    const body = new FormData();
+    body.append("file", picked);
+
+    try {
+      const res = await fetch("/api/run", { method: "POST", body });
+      const data = await res.json();
+      if (!res.ok || data.status !== "ok") throw new Error(data.message || "Run failed");
+      render(data);
+      resultsEl.classList.remove("is-hidden");
+      resultsEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (err) {
+      errorBox.textContent = "Could not complete the run: " + err.message;
+      errorBox.classList.remove("is-hidden");
+    } finally {
+      runBtn.disabled = false;
+      document.getElementById("run-spinner").classList.add("is-hidden");
+      document.getElementById("run-label").textContent = "Run optimizer";
+    }
+  });
+
+  function render(d) {
+    const m = d.metrics || {};
+    const cells = [
+      { k: "Rows processed", v: d.n_rows },
+      { k: "Forecast MAE", v: m.mae != null ? fmt(m.mae, 3) + " kW" : "n/a" },
+      { k: "Forecast R²", v: m.r2 != null ? fmt(m.r2, 3) : "n/a" },
+      { k: "Pareto solutions", v: d.pareto.n_solutions },
+    ];
+    document.getElementById("result-metrics").innerHTML = cells
+      .map((c) => `<div class="metric-cell"><div class="k">${c.k}</div><div class="v">${c.v}</div></div>`)
+      .join("");
+
+    document.getElementById("result-rows").textContent = d.timestamps.length + " hours";
+    document.getElementById("result-note").textContent =
+      d.actual_kw ? "Predicted against the measured column in your file." :
+      "Your file has no measured load column, so only predictions are shown.";
+
+    const labels = d.timestamps.map((t) => t.slice(5, 16));
+    const series = [{ label: "Predicted", data: d.predictions_kw, color: BI.colors.accent }];
+    if (d.actual_kw) series.push({ label: "Measured", data: d.actual_kw, color: BI.colors.violet, dashed: true });
+    BI.line(document.getElementById("chart-run-forecast"), { labels, series, yTitle: "kW", fillFirst: true });
+
+    BI.pareto(document.getElementById("chart-run-pareto"), {
+      cost: d.pareto.costs,
+      energy: d.pareto.energy,
+      ppd: d.pareto.discomfort,
+    });
+
+    const best = d.schedules.C_comfortable || d.schedules.B_balanced;
+    const hours = best.hours.map((h) => String(h.hour).padStart(2, "0") + ":00");
+    BI.line(document.getElementById("chart-run-load"), {
+      labels: hours,
+      series: [
+        { label: "Net load", data: best.net_load, color: BI.colors.warn, stepped: true },
+        { label: "Solar available", data: d.solar_kw, color: BI.colors.good, dashed: true },
+      ],
+      yTitle: "kW", yMin: 0,
+    });
+
+    document.getElementById("run-table").innerHTML = `
+      <table class="data">
+        <thead><tr><th>Hour</th><th class="num">Setpoint</th><th class="num">Lighting</th><th class="num">Battery</th><th class="num">Net load</th><th class="num">SOC</th></tr></thead>
+        <tbody>${best.hours.map((h, i) => `
+          <tr>
+            <td class="mono">${hours[i]}</td>
+            <td class="num">${fmt(h.hvac_setpoint_C)} °C</td>
+            <td class="num">${fmt(h.lighting)}</td>
+            <td class="num">${fmt(h.battery_action)}</td>
+            <td class="num">${fmt(best.net_load[i])} kW</td>
+            <td class="num">${fmt(best.soc[i], 1)} kWh</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>`;
+  }
+</script>
+{% endblock %}

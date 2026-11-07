@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if page == 'overview' %}BuildingIQ — Smart Building Energy Optimization{% else %}{{ title }} · BuildingIQ{% endif %}</title>
+  <meta name="description" content="{% block description %}Multi-objective energy optimization for a real monitored building: XGBoost load forecasting, NSGA-II scheduling and live Pareto trade-offs across cost, energy and thermal comfort.{% endblock %}">
+  <meta name="theme-color" content="#0a1018">
+  <link rel="canonical" href="{{ request.url }}">
+  <link rel="icon" href="{{ url_for('static', filename='img/favicon.svg') }}" type="image/svg+xml">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="BuildingIQ">
+  <meta property="og:title" content="{% if page == 'overview' %}BuildingIQ — Smart Building Energy Optimization{% else %}{{ title }} · BuildingIQ{% endif %}">
+  <meta property="og:description" content="XGBoost load forecasting (R² 0.989) driving an NSGA-II optimizer that trades electricity cost, energy use and occupant comfort for a real sensor-monitored building.">
+  <meta property="og:image" content="{{ url_for('static', filename='img/social-preview.png', _external=True) }}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ title }} · BuildingIQ">
+  <meta name="twitter:description" content="Multi-objective energy optimization for a real smart building.">
+  <meta name="twitter:image" content="{{ url_for('static', filename='img/social-preview.png', _external=True) }}">
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" href="{{ url_for('overview') }}">
+      <span class="brand-mark" aria-hidden="true">BI</span>
+      <span class="brand-text">
+        <span class="brand-name">BuildingIQ</span>
+        <span class="brand-sub">Energy lab</span>
+      </span>
+    </a>
+
+    <span class="nav-group-label">Analysis</span>
+    {% for key, href, label, icon in nav[:4] %}
+      <a class="nav-link {% if page == key %}active{% endif %}" href="{{ href }}" {% if page == key %}aria-current="page"{% endif %}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="{{ icon }}"/></svg>{{ label }}
+      </a>
+    {% endfor %}
+
+    <span class="nav-group-label">Workbench</span>
+    {% for key, href, label, icon in nav[4:] %}
+      <a class="nav-link {% if page == key %}active{% endif %}" href="{{ href }}" {% if page == key %}aria-current="page"{% endif %}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="{{ icon }}"/></svg>{{ label }}
+      </a>
+    {% endfor %}
+
+    <div class="sidebar-foot">
+      <strong>HouseZero</strong>, Cambridge MA<br>
+      {{ data.train_rows + data.val_rows + data.test_rows }} modelling hours<br>
+      Jun 2023 – Jun 2024
+    </div>
+  </aside>
+
+  <div class="main">
+    <main id="main" class="main-inner">
+      <header class="page-head">
+        <div>
+          {% block eyebrow %}{% endblock %}
+          <h1>{{ title }}</h1>
+          <p class="page-sub">{{ subtitle }}</p>
+        </div>
+        {% block page_head_extra %}
+        <span class="chip"><span class="dot"></span> Pipeline results · test R² {{ '%.3f'|format(model.test.r2) }}</span>
+        {% endblock %}
+      </header>
+
+      {% block content %}{% endblock %}
+
+      <footer class="site-footer">
+        <span>BuildingIQ · academic project · results generated from public sensor datasets.</span>
+        <span><a href="{{ url_for('pipeline_page') }}">Method</a> · <a href="{{ url_for('run_page') }}">Re-run</a> · <a href="/health">API status</a></span>
+      </footer>
+    </main>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

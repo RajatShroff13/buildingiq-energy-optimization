@@ -1,0 +1,53 @@
+{
+  "prediction_model": {
+    "type": "XGBoost Regressor",
+    "n_estimators": 800,
+    "max_depth": 7,
+    "n_features": 39,
+    "top_features": [
+      "pv_generation_kW",
+      "solar_radiation_Wm2",
+      "heating_kW",
+      "load_lag_1h",
+      "cooling_kW"
+    ],
+    "validation": {
+      "rmse": 0.1052,
+      "mae": 0.0604,
+      "r2": 0.9844
+    },
+    "test": {
+      "rmse": 0.0524,
+      "mae": 0.0316,
+      "r2": 0.9898,
+      "mape_percent": 7.57
+    },
+    "mape_note": "MAPE over hours with |load| > 0.1 kW; near-zero night hours make plain MAPE unusable"
+  },
+  "moga": {
+    "population_size": 100,
+    "generations": 60,
+    "pareto_solutions": 100,
+    "solution_A_cheapest": {
+      "cost": 2.44,
+      "energy": 32.729,
+      "PPD_pct": 6.495
+    },
+    "solution_B_balanced": {
+      "cost": 2.454,
+      "energy": 32.934,
+      "PPD_pct": 6.305
+    },
+    "solution_C_comfortable": {
+      "cost": 2.674,
+      "energy": 35.589,
+      "PPD_pct": 5.26
+    }
+  },
+  "data": {
+    "train_rows": 6031,
+    "val_rows": 1292,
+    "test_rows": 1293,
+    "date_range": "2023-06-08 -> 2024-06-01"
+  }
+}
